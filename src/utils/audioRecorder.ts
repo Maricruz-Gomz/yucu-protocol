@@ -33,13 +33,18 @@ type SpeechRecognitionResultEvent = {
   }>;
 };
 
+type SpeechRecognitionErrorEvent = {
+  error: string;
+  message?: string;
+};
+
 type SpeechRecognitionLike = {
   lang: string;
   continuous: boolean;
   interimResults: boolean;
   maxAlternatives: number;
   onresult: ((event: SpeechRecognitionResultEvent) => void) | null;
-  onerror: ((event: any) => void) | null;
+  onerror: ((event: SpeechRecognitionErrorEvent) => void) | null;
   onend: (() => void) | null;
   start: () => void;
   stop: () => void;
@@ -47,6 +52,15 @@ type SpeechRecognitionLike = {
 };
 
 type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
+
+type WindowWithSpeechRecognition = Window & {
+  SpeechRecognition?: SpeechRecognitionConstructor;
+  webkitSpeechRecognition?: SpeechRecognitionConstructor;
+};
+
+type WindowWithAudioContext = Window & {
+  webkitAudioContext?: typeof AudioContext;
+};
 
 /**
  * Comprueba las capacidades del micrófono.
@@ -57,11 +71,15 @@ export async function getMicrophoneCapabilities() {
     navigator.mediaDevices?.getUserMedia
   );
 
-  const SpeechRecognitionClass =
+  const browserWindow =
     typeof window !== 'undefined'
-      ? (window as any).SpeechRecognition ||
-        (window as any).webkitSpeechRecognition
+      ? (window as WindowWithSpeechRecognition)
       : null;
+
+  const SpeechRecognitionClass =
+    browserWindow?.SpeechRecognition ||
+    browserWindow?.webkitSpeechRecognition ||
+    null;
 
   let permissionState:
     | 'granted'
@@ -119,13 +137,6 @@ export function blobToBase64(blob: Blob): Promise<string> {
 }
 
 /**
- * Envía audio a Gemini únicamente cuando existe
- * autorización explícita.
- *
- * Esta función nunca se ejecuta automáticamente
- * al detener una grabación.
- */
-/**
  * Transcripción mediante Gemini.
  * Solo permite enviar audio con consentimiento explícito.
  */
@@ -134,7 +145,6 @@ export async function transcribeAudioWithAI(
   mimeType: string,
   consentimiento: ConsentimientoIA
 ): Promise<string | null> {
-
   if (!puedeEnviarAIA(consentimiento, 'audio')) {
     return null;
   }
@@ -261,9 +271,11 @@ export async function startAudioRecording(
   let animFrameId: number | null = null;
 
   try {
+    const audioWindow = window as WindowWithAudioContext;
+
     const AudioContextClass =
-      (window as any).AudioContext ||
-      (window as any).webkitAudioContext;
+      window.AudioContext ||
+      audioWindow.webkitAudioContext;
 
     if (AudioContextClass) {
       audioContext = new AudioContextClass();
@@ -329,15 +341,15 @@ export async function startAudioRecording(
   let recognitionInstance: SpeechRecognitionLike | null = null;
 
   try {
+    const speechWindow =
+      window as WindowWithSpeechRecognition;
+
     const SpeechRecognitionClass =
-      (window as any).SpeechRecognition ||
-      (window as any).webkitSpeechRecognition;
+      speechWindow.SpeechRecognition ||
+      speechWindow.webkitSpeechRecognition;
 
     if (SpeechRecognitionClass) {
-      const Recognition =
-        SpeechRecognitionClass as SpeechRecognitionConstructor;
-
-      recognitionInstance = new Recognition();
+      recognitionInstance = new SpeechRecognitionClass();
 
       recognitionInstance.lang = lang;
       recognitionInstance.continuous = true;
@@ -380,7 +392,7 @@ export async function startAudioRecording(
       recognitionInstance.onerror = (event) => {
         console.warn(
           'SpeechRecognition warning:',
-          event?.error
+          event.error
         );
       };
 
@@ -493,8 +505,7 @@ export async function startAudioRecording(
               .join(' ')
               .trim();
 
-            // IMPORTANTE:
-            // Aquí no se llama a Gemini.
+            // No se llama a Gemini aquí.
             // El envío requiere consentimiento explícito.
 
             resolve({
