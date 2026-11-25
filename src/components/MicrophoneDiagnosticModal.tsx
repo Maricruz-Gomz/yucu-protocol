@@ -1,12 +1,15 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 
 import {
   startAudioRecording,
-  LiveRecorderSession,
   getMicrophoneCapabilities,
-  AudioRecordingResult,
   transcribeAudioWithAI
+} from '../utils/audioRecorder';
+
+import type {
+  LiveRecorderSession,
+  AudioRecordingResult
 } from '../utils/audioRecorder';
 
 import { DialogoConsentimientoIA } from './accesibilidad/DialogoConsentimientoIA';
@@ -44,12 +47,12 @@ export const MicrophoneDiagnosticModal: React.FC<MicrophoneDiagnosticModalProps>
   const [showConsentDialog, setShowConsentDialog] = useState<boolean>(false);
 
   const sessionRef = useRef<LiveRecorderSession | null>(null);
-  const timerRef = useRef<any>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const audioElementRef = useRef<HTMLAudioElement | null>(null);
 
   // Detener grabación local
-  const handleStopTest = async () => {
-    if (timerRef.current) {
+  const handleStopTest = useCallback(async () => {
+    if (timerRef.current !== null) {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
@@ -69,14 +72,15 @@ export const MicrophoneDiagnosticModal: React.FC<MicrophoneDiagnosticModalProps>
         if (res.transcript) {
           setAiTranscript(res.transcript);
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error('Error al detener sesión:', err);
+
         setErrorMessage(
           'Hubo un problema al procesar el audio grabado.'
         );
       }
     }
-  };
+  }, []);
 
   // Iniciar grabación local
   const handleStartTest = async () => {
@@ -103,18 +107,20 @@ export const MicrophoneDiagnosticModal: React.FC<MicrophoneDiagnosticModalProps>
 
       getMicrophoneCapabilities().then(setCapabilities);
 
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.warn('Error al iniciar prueba de micro:', err);
 
-      if (timerRef.current) {
+      if (timerRef.current !== null) {
         clearInterval(timerRef.current);
         timerRef.current = null;
       }
 
       setIsTesting(false);
 
+      const message = err instanceof Error ? err.message : null;
+
       setErrorMessage(
-        err?.message ||
+        message ||
           'El navegador bloqueó el acceso al micrófono. Haz clic en el ícono del candado (🔒) de tu navegador para permitir el micrófono.'
       );
     }
@@ -143,8 +149,8 @@ export const MicrophoneDiagnosticModal: React.FC<MicrophoneDiagnosticModalProps>
     audioElementRef.current
       .play()
       .then(() => setIsPlayingAudio(true))
-      .catch((e) => {
-        console.warn('Error reproduciendo audio:', e);
+      .catch((err: unknown) => {
+        console.warn('Error reproduciendo audio:', err);
       });
   };
 
@@ -195,11 +201,13 @@ export const MicrophoneDiagnosticModal: React.FC<MicrophoneDiagnosticModalProps>
           'Audio procesado, pero no se detectaron palabras audibles.'
       );
 
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Error en transcripción con IA:', err);
 
+      const message = err instanceof Error ? err.message : null;
+
       setErrorMessage(
-        err?.message ||
+        message ||
           'No se pudo realizar la transcripción con IA.'
       );
 
@@ -220,7 +228,7 @@ export const MicrophoneDiagnosticModal: React.FC<MicrophoneDiagnosticModalProps>
       getMicrophoneCapabilities().then(setCapabilities);
     } else {
       setShowConsentDialog(false);
-      handleStopTest();
+      void handleStopTest();
 
       if (audioElementRef.current) {
         audioElementRef.current.pause();
@@ -228,7 +236,7 @@ export const MicrophoneDiagnosticModal: React.FC<MicrophoneDiagnosticModalProps>
 
       setIsPlayingAudio(false);
     }
-  }, [isOpen]);
+  }, [isOpen, handleStopTest]);
 
   // Liberar recursos al desmontar
   useEffect(() => {
@@ -238,8 +246,9 @@ export const MicrophoneDiagnosticModal: React.FC<MicrophoneDiagnosticModalProps>
         sessionRef.current = null;
       }
 
-      if (timerRef.current) {
+      if (timerRef.current !== null) {
         clearInterval(timerRef.current);
+        timerRef.current = null;
       }
 
       if (audioElementRef.current) {
