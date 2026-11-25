@@ -1,26 +1,29 @@
+
 export interface ConsentimientoIA {
   imagen: boolean;
   audio: boolean;
 }
 
-// Todo consentimiento empieza sin marcar.
+export type TipoEnvioIA = 'imagen' | 'audio';
+
 export const consentimientoInicial = (): ConsentimientoIA => ({
   imagen: false,
   audio: false,
 });
 
-export type TipoEnvioIA = 'imagen' | 'audio';
+export const puedeEnviarAIA = (
+  consentimiento: ConsentimientoIA,
+  tipo: TipoEnvioIA
+): boolean => consentimiento[tipo] === true;
 
-// El envío solo se permite si la persona dijo "Sí, enviar" y no lo revocó.
-export const puedeEnviarAIA = (c: ConsentimientoIA, tipo: TipoEnvioIA): boolean =>
-  c[tipo] === true;
-
-// Envuelve cualquier llamada a la IA: si no hay consentimiento, no se llama.
 export async function conConsentimiento<T>(
-  c: ConsentimientoIA,
+  consentimiento: ConsentimientoIA,
   tipo: TipoEnvioIA,
   enviar: () => Promise<T>
 ): Promise<T | null> {
-  if (!puedeEnviarAIA(c, tipo)) return null;
+  if (!puedeEnviarAIA(consentimiento, tipo)) {
+    return null;
+  }
+
   return enviar();
 }
